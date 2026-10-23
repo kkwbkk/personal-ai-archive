@@ -1,0 +1,34 @@
+name: Archive validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  archive-check:
+    name: archive-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the archive
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run meaningful tool tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Validate archive structure and publication patterns
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$PR_BASE_SHA" ]; then
+            python3 scripts/validate_archive.py --base "$PR_BASE_SHA"
+          else
+            python3 scripts/validate_archive.py
+          fi
