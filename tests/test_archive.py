@@ -68,6 +68,30 @@ class ArchiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, self.assertRaises(archive.ArchiveError):
             archive.export_bundle("owner/repo", "main", Path(folder) / "bundle.md", get=get)
 
+    def test_export_relative_links_pin_parent_files_and_directories(self):
+        sha = "a" * 40
+        text = ('[规则](../docs/update-policy.md#规则) [项目](project-template.md) '
+                '[目录](../docs/) [目录无斜线](../docs) [空格](<../docs/my file.md> "标题")')
+        result = archive.pin_markdown_links(text, "archive/index.md", "owner/repo", sha, {"docs"})
+        base = "https://github.com/owner/repo/"
+        self.assertIn("[规则](" + base + "blob/" + sha + "/docs/update-policy.md#规则)", result)
+        self.assertIn("[项目](" + base + "blob/" + sha + "/archive/project-template.md)", result)
+        self.assertIn("[目录](" + base + "tree/" + sha + "/docs)", result)
+        self.assertIn("[目录无斜线](" + base + "tree/" + sha + "/docs)", result)
+        self.assertIn('/docs/my%20file.md "标题")', result)
+
+    def test_export_links_preserve_external_anchors_and_code(self):
+        unchanged = ('[官网](https://example.com/a) [联系](mailto:me@example.com) [锚点](#目标)\n'
+                     '`[行内代码](../docs/a.md)`\n'
+                     '```markdown\n[代码](../docs/a.md)\n```\n'
+                     '~~~text\n[代码](../docs/a.md)\n~~~\n'
+                     '    [缩进代码](../docs/a.md)\n'
+                     '![图片](../docs/image.png)\n')
+        self.assertEqual(archive.pin_markdown_links(unchanged, "archive/index.md", "owner/repo", "a" * 40), unchanged)
+        mixed = archive.pin_markdown_links('`code` [文件](a.md) `more`', "archive/index.md", "owner/repo", "a" * 40)
+        self.assertIn('/archive/a.md)', mixed)
+        self.assertTrue(mixed.startswith('`code` '))
+
     def test_propose_writes_branch_based_on_pinned_main(self):
         calls = []
         sha = "a" * 40
