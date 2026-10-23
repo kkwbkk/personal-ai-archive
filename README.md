@@ -41,7 +41,7 @@ workflow/priorities.md、memory/preferences.md；按当前任务补读其他文�
 具备授权 GitHub 工具的 Agent 在任务结束时运行约定的写回动作。仓库提供零第三方 Python 依赖的 [更新和导出工具](scripts/archive.py)，追加到 `workflow/`、`memory/`、`skills/` 的已有文档并创建 PR。主分支是已接受版本，PR 是待接受版本，不等同于偏好已生效。
 
 - [更新规则](docs/update-policy.md)：分类、证据、冲突和权限。
-- [历史恢复](docs/recovery.md)：从任意可达主线历史提交建立恢复 PR，保留后续历史。
+- [历史恢复](docs/recovery.md)：从初始化完成后的主线历史版本建立恢复 PR，保留后续历史。
 - [搭建报告](docs/setup-report.md)：实际验证结果和未接通的部分。
 
 `AI-READONLY` / `AI-WRITABLE` 是供 AI 识别的约定，不能代替 GitHub 权限。服务端分支保护负责阻止主分支直接改写；检查器提供结构和常见误操作检测，不保证内容语义正确或绝无敏感信息。
