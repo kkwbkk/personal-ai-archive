@@ -4,7 +4,7 @@
 
 一份由你控制、可版本追溯的 Markdown 个人档案。仓库地址：<https://github.com/kkwbkk/personal-ai-archive>。
 
-当前内容是空白模板，`{{占位符}}` 表示未知信息，不是个人事实。仓库公开，填入的内容及历史版本均可能被任何人读取；这里只保存你明确愿意公开的信息。
+当前已填入本人确认并授权发布的档案摘要，未确认内容标为未知；可复用模板中的 `{{占位符}}` 不是个人事实。仓库公开，填入的内容及历史版本均可能被任何人读取；这里只保存你明确愿意公开的信息。
 
 ## 从哪里开始
 
@@ -16,7 +16,7 @@
 | [skills](skills/) | 已有能力、学习计划和差距 | [inventory.md](skills/inventory.md)、[learning-plan.md](skills/learning-plan.md) |
 | [archive](archive/) | 历史项目、旧文档、已完成任务 | [index.md](archive/index.md)、[project-template.md](archive/project-template.md) |
 
-先由你或获授权的 AI 填写 `identity/profile.md`，再填 `workflow/preferences.md`。模板中的例子和占位符都不应被 AI 当成你的真实偏好。
+从 `identity/profile.md` 与 `workflow/preferences.md` 开始读取；本人确认范围和资料口径见 [本次档案更新说明](docs/profile-update-2026-10-23.md)。模板中的例子和占位符都不应被 AI 当成真实偏好。
 
 ## 给任意 AI 的启动提示
 
