@@ -101,15 +101,50 @@ def check_deletions(root: Path, base: str) -> list[str]:
             for path in removed.split("\0") if path in REQUIRED_TEMPLATES]
 
 
+def check_restore(root: Path, base: str, head: str) -> list[str]:
+    """Require a fresh, exact snapshot commit for a restore-tool PR.
+
+    The workflow determines restore PRs from their tool-owned branch prefix,
+    rather than trusting a commit subject that Update branch could replace.
+    """
+    for name, value in (("--base", base), ("--head", head)):
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", value or ""):
+            return [f"{name} must be a full 40-character commit SHA for restore validation"]
+    base, head = base.lower(), head.lower()
+    errors: list[str] = []
+    parents = git_output(root, ["show", "-s", "--format=%P", head]).strip().split()
+    if parents != [base]:
+        errors.append("Restore PR is stale or was updated/merged with another branch; regenerate it against current main instead of using Update branch")
+    subject = git_output(root, ["show", "-s", "--format=%s", head]).strip()
+    marker = re.fullmatch(r"restore: snapshot ([0-9a-fA-F]{40})", subject)
+    if marker is None:
+        errors.append("Restore PR head must be the original 'restore: snapshot <40-character SHA>' commit; regenerate the restore PR")
+        return errors
+    target = marker.group(1).lower()
+    if git_output(root, ["merge-base", target, base]).strip().lower() != target:
+        errors.append("Restore target must be an ancestor of current main")
+    head_tree = git_output(root, ["rev-parse", head + "^{tree}"]).strip()
+    target_tree = git_output(root, ["rev-parse", target + "^{tree}"]).strip()
+    if head_tree != target_tree:
+        errors.append("Restore PR content does not exactly match its target snapshot; regenerate the restore PR")
+    return errors
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--base", help="Optional PR base commit SHA; disallow deletion of initial core templates")
+    parser.add_argument("--head", help="Actual PR head commit SHA, rather than GitHub's synthetic merge commit")
+    parser.add_argument("--restore", action="store_true", help="Require a fresh exact snapshot commit for an ai/restore- PR")
     args = parser.parse_args(argv)
+    if args.restore and (not args.base or not args.head):
+        parser.error("--restore requires both --base and --head")
     try:
         errors = validate_paths(args.root, archive_paths(args.root))
         if args.base:
             errors.extend(check_deletions(args.root, args.base))
+        if args.restore:
+            errors.extend(check_restore(args.root, args.base, args.head))
     except (OSError, subprocess.CalledProcessError) as error:
         print(f"Archive validation could not finish: {error}", file=sys.stderr)
         return 2

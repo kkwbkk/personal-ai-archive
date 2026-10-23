@@ -80,7 +80,9 @@ class ArchiveTests(unittest.TestCase):
             if "/contents/" in endpoint and method == "GET":
                 self.assertTrue(endpoint.endswith("?ref=" + sha))
                 return {"type": "file", "encoding": "base64", "sha": "b" * 40,
-                        "content": base64.b64encode(b"# Existing\n").decode()}
+                        "content": base64.b64encode(b"# AI-WRITABLE: Existing\n").decode()}
+            if method == "PUT":
+                return {"commit": {"sha": "c" * 40}}
             if endpoint.endswith("/pulls"):
                 return {"html_url": "https://github.com/owner/repo/pull/1"}
             return {}
@@ -89,10 +91,30 @@ class ArchiveTests(unittest.TestCase):
             entry.write_text("## 新经验\n来源：授权任务", encoding="utf-8")
             result = archive.propose("owner/repo", "memory/experiences.md", entry, "记录新经验", api=api)
         self.assertEqual(result["status"], "proposed_not_merged")
+        self.assertEqual(result["commit"], "c" * 40)
         write = next(call for call in calls if call[1] == "PUT")
         self.assertEqual(write[2]["sha"], "b" * 40)
         self.assertTrue(write[2]["branch"].startswith("ai/update-"))
-        self.assertTrue(base64.b64decode(write[2]["content"]).startswith(b"# Existing\n"))
+        self.assertTrue(base64.b64decode(write[2]["content"]).startswith(b"# AI-WRITABLE: Existing\n"))
+
+    def test_propose_refuses_readonly_tag_before_writing(self):
+        calls = []
+        def api(endpoint, method="GET", payload=None):
+            calls.append((endpoint, method, payload))
+            if endpoint.endswith("/commits/main"):
+                return {"sha": "a" * 40}
+            if "/git/trees/" in endpoint:
+                return {"tree": [{"path": "memory/experiences.md", "type": "blob", "mode": "100644"}]}
+            if "/contents/" in endpoint:
+                return {"type": "file", "encoding": "base64", "sha": "b" * 40,
+                        "content": base64.b64encode(b"# AI-READONLY: Locked\n").decode()}
+            self.fail("Read-only document must not cause an API write")
+        with tempfile.TemporaryDirectory() as folder:
+            entry = Path(folder) / "entry.md"
+            entry.write_text("## 新经验\n来源：授权任务", encoding="utf-8")
+            with self.assertRaisesRegex(archive.ArchiveError, "AI-WRITABLE"):
+                archive.propose("owner/repo", "memory/experiences.md", entry, "记录新经验", api=api)
+        self.assertTrue(all(call[1] == "GET" for call in calls))
 
     def test_restore_preserves_main_parent_and_target_tree(self):
         target, head, tree, new_commit = [c * 40 for c in "abcd"]
@@ -112,7 +134,8 @@ class ArchiveTests(unittest.TestCase):
             if endpoint.endswith("/pulls"):
                 return {"html_url": "https://github.com/owner/repo/pull/2"}
             return {}
-        archive.restore("owner/repo", target, "恢复已确认的历史快照", api=api)
+        result = archive.restore("owner/repo", target, "恢复已确认的历史快照", api=api)
+        self.assertEqual(result["commit"], new_commit)
         commit = next(call for call in calls if call[0].endswith("/git/commits"))
         self.assertEqual(commit[2]["parents"], [head])
         self.assertEqual(commit[2]["tree"], tree)

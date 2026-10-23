@@ -175,13 +175,16 @@ def unique_branch(kind):
     return "ai/" + kind + "-" + uuid.uuid4().hex
 
 
-def create_proposal(repo, branch, title, body, api=gh_api):
+def create_proposal(repo, branch, title, body, api=gh_api, commit_sha=None):
     result = api("repos/" + repo + "/pulls", "POST",
                  {"title": title, "head": branch, "base": "main", "body": body})
     url = result.get("html_url", "")
     if not url.startswith("https://github.com/" + repo + "/pull/"):
         raise ArchiveError("未收到预期的变更提案地址，不能确认成功。")
-    return {"pull_request": url, "branch": branch, "status": "proposed_not_merged"}
+    result = {"pull_request": url, "branch": branch, "status": "proposed_not_merged"}
+    if commit_sha is not None:
+        result["commit"] = validate_sha(commit_sha)
+    return result
 
 
 def propose(repo, path, entry_file, title, api=gh_api):
@@ -219,11 +222,13 @@ def propose(repo, path, entry_file, title, api=gh_api):
     updated = append_entry(existing, addition)
     branch = unique_branch("update")
     api(root + "/git/refs", "POST", {"ref": "refs/heads/" + branch, "sha": head})
-    api(root + "/contents/" + urllib.parse.quote(path, safe="/"), "PUT",
+    write_result = api(root + "/contents/" + urllib.parse.quote(path, safe="/"), "PUT",
         {"message": "memory: " + title, "branch": branch, "sha": file_info["sha"],
          "content": base64.b64encode(updated.encode("utf-8")).decode("ascii")})
+    commit_sha = validate_sha(write_result["commit"]["sha"])
     return create_proposal(repo, branch, title,
-                           f"自动追加档案条目到 `{path}`。\n\n基于主线提交：`{head}`。\n\n此提案保留旧内容；尚未合并到主档案。请核实来源、公开授权和事实/推断标记。", api)
+                           f"自动追加档案条目到 `{path}`。\n\n基于主线提交：`{head}`。\n\n此提案保留旧内容；尚未合并到主档案。请核实来源、公开授权和事实/推断标记。", api,
+                           commit_sha=commit_sha)
 
 
 def restore(repo, target, reason, api=gh_api):
@@ -246,7 +251,8 @@ def restore(repo, target, reason, api=gh_api):
     branch = unique_branch("restore")
     api(root + "/git/refs", "POST", {"ref": "refs/heads/" + branch, "sha": validate_sha(commit["sha"])})
     return create_proposal(repo, branch, "恢复档案到 " + target[:12],
-                           f"将完整文件树恢复到历史提交 `{target}`，以当前主线 `{head}` 为父提交保留全部历史。\n\n原因：{reason}\n\n不使用强制推送。合并前应核实目标版本的工作流与安全规则。", api)
+                           f"将完整文件树恢复到历史提交 `{target}`，以当前主线 `{head}` 为父提交保留全部历史。\n\n原因：{reason}\n\n不使用强制推送。合并前应核实目标版本的工作流与安全规则。", api,
+                           commit_sha=commit["sha"])
 
 
 def main(argv=None):

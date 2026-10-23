@@ -22,7 +22,7 @@ GET https://api.github.com/repos/kkwbkk/personal-ai-archive/contents/identity/pr
 Accept: application/vnd.github.raw+json
 ```
 
-先用第一条响应的 `sha` 替换第二条中的“完整提交SHA”。文件路径以实际仓库目录为准。`api/github-read.openapi.json` 提供只读接口描述；导入接口描述后仍需由平台提供工具运行能力，不会使普通聊天模型自行联网。
+先用第一条响应的 `sha` 替换第二条中的“完整提交SHA”。文件路径以实际仓库目录为准。`api/github-read.openapi.json` 提供只读接口描述，使用 GitHub 默认 JSON 响应，其中 `content` 是 Markdown 的 base64 传输包装，由宿主按 `encoding` 解码；上面的 HTTP 示例用 Accept 直接取得 Markdown 原文。文件本身始终是 Markdown，无需转换存储格式。导入接口描述后仍需由平台提供工具运行能力，不会使普通聊天模型自行联网。
 
 没有 GitHub 工具时，可由能访问仓库的 Agent 导出固定版本的上下文包，再将包附加到任意支持文件输入的 AI。导出包含版本信息，后续仓库更新需要重新导出：
 

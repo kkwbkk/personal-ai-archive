@@ -85,6 +85,56 @@ class ArchiveValidationTests(unittest.TestCase):
         self.assertEqual(validator.check_deletions(self.root, base), [])
         self.assertEqual(validator.validate_paths(self.root, self.paths), [])
 
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.root), *args], text=True,
+                              capture_output=True, check=True).stdout.strip()
+
+    def restore_history(self):
+        self.git("init", "-q")
+        self.git("config", "user.name", "Validation test")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("add", ".")
+        self.git("commit", "-qm", "initial archive")
+        target = self.git("rev-parse", "HEAD")
+        (self.root / "memory/experiences.md").write_text("# AI-WRITABLE: Updated experience\n", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "later main")
+        base = self.git("rev-parse", "HEAD")
+        tree = self.git("rev-parse", target + "^{tree}")
+        head = self.git("commit-tree", tree, "-p", base, "-m", "restore: snapshot " + target)
+        return target, base, tree, head
+
+    def test_fresh_restore_exactly_matches_historical_tree(self):
+        _target, base, _tree, head = self.restore_history()
+        self.assertEqual(validator.check_restore(self.root, base, head), [])
+
+    def test_stale_restore_requires_regeneration(self):
+        _target, _base, _tree, head = self.restore_history()
+        (self.root / "memory/preferences.md").write_text("# AI-WRITABLE: Newer preference\n", encoding="utf-8")
+        self.git("add", ".")
+        self.git("commit", "-qm", "main advanced after restore PR")
+        latest_base = self.git("rev-parse", "HEAD")
+        self.assertTrue(any("stale" in error for error in validator.check_restore(self.root, latest_base, head)))
+
+    def test_update_branch_merge_cannot_bypass_restore_check(self):
+        _target, base, tree, head = self.restore_history()
+        updated = self.git("commit-tree", tree, "-p", head, "-p", base,
+                           "-m", "Merge branch main into ai/restore-example")
+        errors = validator.check_restore(self.root, base, updated)
+        self.assertTrue(any("stale" in error for error in errors))
+        self.assertTrue(any("original" in error for error in errors))
+
+    def test_restore_marker_alone_cannot_hide_different_content(self):
+        target, base, _tree, _head = self.restore_history()
+        wrong_tree = self.git("rev-parse", base + "^{tree}")
+        wrong_head = self.git("commit-tree", wrong_tree, "-p", base, "-m", "restore: snapshot " + target)
+        errors = validator.check_restore(self.root, base, wrong_head)
+        self.assertTrue(any("exactly match" in error for error in errors))
+
+    def test_restore_rejects_invalid_commit_arguments(self):
+        errors = validator.check_restore(self.root, "--option", "a" * 40)
+        self.assertIn("40-character", errors[0])
+
 
 if __name__ == "__main__":
     unittest.main()
