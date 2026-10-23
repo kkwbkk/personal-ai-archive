@@ -26,8 +26,12 @@ jobs:
       - name: Validate archive structure and publication patterns
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          if [ -n "$PR_BASE_SHA" ]; then
+          if [[ "$PR_HEAD_REF" == ai/restore-* ]]; then
+            python3 scripts/validate_archive.py --base "$PR_BASE_SHA" --head "$PR_HEAD_SHA" --restore
+          elif [ -n "$PR_BASE_SHA" ]; then
             python3 scripts/validate_archive.py --base "$PR_BASE_SHA"
           else
             python3 scripts/validate_archive.py
