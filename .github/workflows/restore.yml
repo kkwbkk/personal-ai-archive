@@ -1,0 +1,51 @@
+name: Restore archive snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Full 40-character commit SHA from this repository main history'
+        required: true
+        type: string
+      reason:
+        description: 'Why restore this snapshot?'
+        required: true
+        default: 'Restore an earlier archive snapshot'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out trusted current main tools
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Create a recovery commit and pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RESTORE_COMMIT: ${{ inputs.commit }}
+          RESTORE_REASON: ${{ inputs.reason }}
+        run: |
+          python3 scripts/archive.py --repo "$GH_REPO" restore \
+            --commit "$RESTORE_COMMIT" --reason "$RESTORE_REASON" > restore-result.json
+          cat restore-result.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          result = json.loads(Path('restore-result.json').read_text())
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Recovery proposal: ' + result['pull_request'] + '\n')
+              summary.write('Status: proposed; merge after checks pass.\n')
+          PY
