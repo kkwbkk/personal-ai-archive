@@ -1,0 +1,81 @@
+name: Sync to Gitee
+
+on:
+  push:
+  schedule:
+    # Daily at 04:20 Asia/Shanghai, including branches without this file.
+    - cron: '20 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-to-gitee
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    if: github.repository_owner == 'kkwbkk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITEE_REPOSITORY: git@gitee.com:kkwbkk/personal-ai-archive.git
+    steps:
+      - name: Check out the latest repository history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Configure Gitee SSH authentication
+        env:
+          GITEE_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$GITEE_PRIVATE_KEY" ]]; then
+            echo '::error::The GITEE_PRIVATE_KEY repository secret is missing.'
+            exit 1
+          fi
+          install -d -m 700 "$RUNNER_TEMP/gitee-sync"
+          printf '%s\n' "$GITEE_PRIVATE_KEY" > "$RUNNER_TEMP/gitee-sync/id_rsa"
+          chmod 600 "$RUNNER_TEMP/gitee-sync/id_rsa"
+          printf '%s\n' \
+            'gitee.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEKxHSJ7084RmkJ4YdEi5tngynE8aZe2uEoVVsB/OvYN' \
+            > "$RUNNER_TEMP/gitee-sync/known_hosts"
+
+      - name: Back up branches, tags, and Git LFS objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GIT_SSH_COMMAND="ssh -i '$RUNNER_TEMP/gitee-sync/id_rsa' -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=30 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$RUNNER_TEMP/gitee-sync/known_hosts'"
+          # Fetch at execution time so queued runs send the latest source refs.
+          echo 'Fetching the latest GitHub branches and tags.'
+          git fetch --progress --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
+          # Fail rather than silently back up only pointers if LFS needs attention.
+          git lfs version
+          git lfs ls-files --all --name-only > "$RUNNER_TEMP/gitee-sync/lfs-files"
+          if [[ -s "$RUNNER_TEMP/gitee-sync/lfs-files" ]]; then
+            echo 'Backing up all Git LFS content.'
+            git lfs fetch --all origin
+            git lfs push --all "$GITEE_REPOSITORY"
+          fi
+          refspecs=()
+          while IFS= read -r ref; do
+            if [[ "$ref" != 'refs/remotes/origin/HEAD' ]]; then
+              refspecs+=("$ref:refs/heads/${ref#refs/remotes/origin/}")
+            fi
+          done < <(git for-each-ref --format='%(refname)' refs/remotes/origin/)
+          # The destination is pre-created and private. Keep independent target work.
+          echo 'Pushing branches and tags to Gitee.'
+          if ! git push --progress "$GITEE_REPOSITORY" \
+            "${refspecs[@]}" 'refs/tags/*:refs/tags/*'; then
+            echo '::error::Gitee backup failed. Check connectivity, permissions, or divergent refs; destination history was not force-overwritten.'
+            exit 1
+          fi
+
+      - name: Remove the temporary SSH key
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/gitee-sync"
